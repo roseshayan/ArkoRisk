@@ -1,5 +1,5 @@
 #property copyright "Shayan Namayandeh (SudoShayanNA) — ArkoRisk"
-#property link      "https://github.com/ArkoRisk"
+#property link      "https://github.com/roseshayan/ArkoRisk"
 #property version   "1.40"
 #property strict
 #property icon      "\\Images\\ArkoRisk\\ArkoRisk.ico"

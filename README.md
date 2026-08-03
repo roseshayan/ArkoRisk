@@ -24,8 +24,9 @@
 1. در MetaTrader 5 از منوی `File → Open Data Folder` وارد پوشه داده شوید.
 2. محتوای پوشه [`MQL5`](MQL5) این مخزن را داخل پوشه `MQL5` ترمینال کپی کنید.
 3. فایل `MQL5/Experts/ArkoRisk/ArkoRisk.mq5` را در MetaEditor باز و Compile کنید.
-4. در Navigator روی Expert Advisors راست‌کلیک و `Refresh` را بزنید.
-5. ArkoRisk را روی چارت بیندازید و Algo Trading را فعال کنید.
+4. پوشه `ArkoRisk` در `Images\ArkoRisk` را در `C:\Program Files\MetaTrader 5\MQL5\Images` کپی کنید.
+5. در Navigator روی Expert Advisors راست‌کلیک و `Refresh` را بزنید.
+6. ArkoRisk را روی چارت بیندازید و Algo Trading را فعال کنید.
 
 راهنمای کامل نصب، ورودی‌ها و همه قابلیت‌ها در [مستندات فارسی](docs/USER_GUIDE_FA.md) آمده است.
 
@@ -52,7 +53,7 @@ assets/                               هویت بصری و فایل‌های س�
 
 **Shayan Namayandeh** — `SudoShayanNA`
 
-- GitHub: [@ArkoRisk](https://github.com/ArkoRisk)
+- GitHub: [@ArkoRisk](https://github.com/roseshayan/ArkoRisk)
 - Telegram: [@SudoShayanNA](https://t.me/SudoShayanNA)
 - Email: [namayandeshayan@gmail.com](mailto:namayandeshayan@gmail.com)
 

@@ -10,7 +10,7 @@ authors:
     given-names: Shayan
     alias: SudoShayanNA
     email: namayandeshayan@gmail.com
-repository-code: "https://github.com/ArkoRisk/ArkoRisk-MT5"
-url: "https://github.com/ArkoRisk"
+repository-code: "https://github.com/roseshayan/ArkoRisk"
+url: "https://github.com/roseshayan/ArkoRisk"
 abstract: "An open-source risk, position and prop-firm management Expert Advisor for MetaTrader 5."
 
