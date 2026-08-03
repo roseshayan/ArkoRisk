@@ -1,0 +1,19 @@
+# MetaTrader generated output
+*.ex5
+*.log
+*.dat
+*.set
+
+# Local journals and screenshots
+Journal/
+Screenshots/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary packaging
+*.zip
+

@@ -1,0 +1,48 @@
+name: Bug report
+description: گزارش مشکل قابل بازتولید در ArkoRisk
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: لطفاً اطلاعات حساب، شماره Login و اسکرین‌شات خصوصی را حذف کنید.
+  - type: input
+    id: version
+    attributes:
+      label: ArkoRisk version
+      placeholder: "1.40"
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: MetaTrader 5 build / broker / symbol
+      placeholder: "Build ..., Broker ..., XAUUSD., M1"
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: Account mode
+      options: [Hedging, Netting, Unknown]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: مراحل دقیق، نتیجه مورد انتظار و نتیجه واقعی
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Experts / Journal log
+      render: text
+  - type: checkboxes
+    id: demo
+    attributes:
+      label: Safety check
+      options:
+        - label: این سناریو را روی حساب Demo بازتولید کرده‌ام.
+
