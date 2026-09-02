@@ -7,6 +7,12 @@ on:
     paths:
       - tools/upgrade_arkorisk_v150.py
       - .github/workflows/apply-v150-upgrade.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - tools/upgrade_arkorisk_v150.py
+      - .github/workflows/apply-v150-upgrade.yml
   workflow_dispatch:
 
 permissions:
@@ -14,7 +20,7 @@ permissions:
 
 jobs:
   upgrade:
-    if: ${{ !contains(github.event.head_commit.message || '', 'generated: apply ArkoRisk v1.50 MT5 upgrade') }}
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message || '', 'generated: apply ArkoRisk v1.50 MT5 upgrade') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout feature branch
