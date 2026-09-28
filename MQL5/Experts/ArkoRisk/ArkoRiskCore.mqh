@@ -1072,7 +1072,10 @@ double MinimumStopDistance()
   {
    long stops_level=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
    double distance=(double)stops_level*_Point;
-   return MathMax(distance,SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE));
+   double tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(tick_size<=0.0)
+      tick_size=_Point;
+   return MathMax(distance,tick_size);
   }
 
 double MarketStopSafetyDistance(const MqlTick &tick,const double multiplier=1.0)
@@ -1083,12 +1086,8 @@ double MarketStopSafetyDistance(const MqlTick &tick,const double multiplier=1.0)
    if(tick_size<=0.0)
       tick_size=_Point;
    double broker_distance=(double)MathMax(stops_level,freeze_level)*_Point;
-   double spread=(tick.ask>tick.bid ? tick.ask-tick.bid : 0.0);
    double rounding_buffer=MathMax(2.0*tick_size,2.0*_Point);
    double base=MathMax(broker_distance,tick_size)+rounding_buffer;
-   // A small spread-aware cushion protects symbols whose effective stop level
-   // is dynamic even when SYMBOL_TRADE_STOPS_LEVEL reports zero.
-   base=MathMax(base,spread*0.25+rounding_buffer);
    return base*MathMax(1.0,multiplier);
   }
 
@@ -1709,20 +1708,33 @@ bool ValidateDesigner(string &reason)
    double entry=LinePrice("ENTRY");
    double sl=LinePrice("SL");
    double tp=LinePrice("TP");
-   if(entry<=0.0 || sl<=0.0 || tp<=0.0)
+   if(entry<=0.0 || sl<=0.0)
      {
       reason="Invalid line price";
       return false;
      }
-   if(g_is_buy && !(sl<entry && tp>entry))
+   if(g_is_buy && sl>=entry)
      {
-      reason="BUY setup needs SL below and TP above entry";
+      reason="BUY setup needs SL below entry";
       return false;
      }
-   if(!g_is_buy && !(sl>entry && tp<entry))
+   if(!g_is_buy && sl<=entry)
      {
-      reason="SELL setup needs SL above and TP below entry";
+      reason="SELL setup needs SL above entry";
       return false;
+     }
+   if(tp>0.0)
+     {
+      if(g_is_buy && tp<=entry)
+        {
+         reason="BUY setup needs TP above entry";
+         return false;
+        }
+      if(!g_is_buy && tp>=entry)
+        {
+         reason="SELL setup needs TP below entry";
+         return false;
+        }
      }
    if(MathAbs(entry-sl)<MinimumStopDistance())
      {
@@ -2477,24 +2489,34 @@ bool ValidateMarketStops(const bool buy_side,double &sl,double &tp,string &reaso
       reason="No live quote";
       return false;
      }
-   sl=(buy_side ? NormalizePriceDown(sl) : NormalizePriceUp(sl));
-   tp=(buy_side ? NormalizePriceUp(tp) : NormalizePriceDown(tp));
+   if(sl>0.0) sl=(buy_side ? NormalizePriceDown(sl) : NormalizePriceUp(sl));
+   if(tp>0.0) tp=(buy_side ? NormalizePriceUp(tp) : NormalizePriceDown(tp));
    double min_stop=MarketStopSafetyDistance(tick);
    if(buy_side)
      {
       // Buy SL is checked from Bid while Buy TP is checked from Ask.
-      if(sl>tick.bid-min_stop || tp<tick.ask+min_stop)
+      if(sl>0.0 && sl>tick.bid-min_stop)
         {
-         reason="SL/TP is too close or on the wrong side";
+         reason="Buy SL is too close to Bid or above current price";
+         return false;
+        }
+      if(tp>0.0 && tp<tick.ask+min_stop)
+        {
+         reason="Buy TP is too close to Ask or below current price";
          return false;
         }
      }
    else
      {
       // Sell SL is checked from Ask while Sell TP is checked from Bid.
-      if(sl<tick.ask+min_stop || tp>tick.bid-min_stop)
+      if(sl>0.0 && sl<tick.ask+min_stop)
         {
-         reason="SL/TP is too close or on the wrong side";
+         reason="Sell SL is too close to Ask or below current price";
+         return false;
+        }
+      if(tp>0.0 && tp>tick.bid-min_stop)
+        {
+         reason="Sell TP is too close to Bid or above current price";
          return false;
         }
      }
@@ -2512,53 +2534,118 @@ bool PrepareMarketStops(const bool buy_side,const MqlTick &tick,double &sl,doubl
    double min_stop=MarketStopSafetyDistance(tick,safety_multiplier);
    if(buy_side)
      {
-      sl=NormalizePriceDown(MathMin(sl,tick.bid-min_stop));
-      tp=NormalizePriceUp(MathMax(tp,tick.ask+min_stop));
+      if(sl>0.0) sl=NormalizePriceDown(MathMin(sl,tick.bid-min_stop));
+      if(tp>0.0) tp=NormalizePriceUp(MathMax(tp,tick.ask+min_stop));
      }
    else
      {
-      sl=NormalizePriceUp(MathMax(sl,tick.ask+min_stop));
-      tp=NormalizePriceDown(MathMin(tp,tick.bid-min_stop));
+      if(sl>0.0) sl=NormalizePriceUp(MathMax(sl,tick.ask+min_stop));
+      if(tp>0.0) tp=NormalizePriceDown(MathMin(tp,tick.bid-min_stop));
      }
    return ValidateMarketStops(buy_side,sl,tp,reason);
   }
 
-bool ValidatePendingPrices(const bool buy_side,const double entry,const double sl,const double tp,string &reason)
+bool ValidatePendingPrices(const bool buy_side,const double entry,const double sl,const double tp,ENUM_ORDER_TYPE &order_type,string &reason)
   {
    MqlTick tick={};
-   if(!SymbolInfoTick(_Symbol,tick))
+   if(!SymbolInfoTick(_Symbol,tick) || tick.ask<=0.0 || tick.bid<=0.0)
      {
       reason="No live quote";
       return false;
      }
-   double min_stop=MarketStopSafetyDistance(tick);
+   long stops_level=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   long freeze_level=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   double tick_size=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(tick_size<=0.0)
+      tick_size=_Point;
+   double broker_min=(double)MathMax(stops_level,freeze_level)*_Point;
+   double min_stop=MathMax(broker_min,tick_size);
+
    if(buy_side)
      {
-      if(entry>tick.ask-min_stop)
+      if(entry<=tick.ask-min_stop)
+         order_type=ORDER_TYPE_BUY_LIMIT;
+      else if(entry>=tick.ask+min_stop)
+         order_type=ORDER_TYPE_BUY_STOP;
+      else
         {
-         reason="Buy Limit entry must be farther below current Ask";
+         reason=StringFormat("Entry is too close to Ask (min distance is %.1f pips). Move entry or use BUY NOW.",
+                             min_stop/PipSize());
          return false;
         }
-      if(sl>=entry-min_stop || tp<=entry+min_stop)
+
+      if(sl>=entry)
         {
-         reason="Pending SL/TP violates broker minimum distance";
+         reason="BUY setup requires SL below Entry";
          return false;
+        }
+      if(entry-sl<min_stop)
+        {
+         reason=StringFormat("SL is too close to Entry (min broker distance is %.1f pips)",
+                             min_stop/PipSize());
+         return false;
+        }
+      if(tp>0.0)
+        {
+         if(tp<=entry)
+           {
+            reason="BUY setup requires TP above Entry";
+            return false;
+           }
+         if(tp-entry<min_stop)
+           {
+            reason=StringFormat("TP is too close to Entry (min broker distance is %.1f pips)",
+                                min_stop/PipSize());
+            return false;
+           }
         }
      }
    else
      {
-      if(entry<tick.bid+min_stop)
+      if(entry>=tick.bid+min_stop)
+         order_type=ORDER_TYPE_SELL_LIMIT;
+      else if(entry<=tick.bid-min_stop)
+         order_type=ORDER_TYPE_SELL_STOP;
+      else
         {
-         reason="Sell Limit entry must be farther above current Bid";
+         reason=StringFormat("Entry is too close to Bid (min distance is %.1f pips). Move entry or use SELL NOW.",
+                             min_stop/PipSize());
          return false;
         }
-      if(sl<=entry+min_stop || tp>=entry-min_stop)
+
+      if(sl<=entry)
         {
-         reason="Pending SL/TP violates broker minimum distance";
+         reason="SELL setup requires SL above Entry";
          return false;
+        }
+      if(sl-entry<min_stop)
+        {
+         reason=StringFormat("SL is too close to Entry (min broker distance is %.1f pips)",
+                             min_stop/PipSize());
+         return false;
+        }
+      if(tp>0.0)
+        {
+         if(tp>=entry)
+           {
+            reason="SELL setup requires TP below Entry";
+            return false;
+           }
+         if(entry-tp<min_stop)
+           {
+            reason=StringFormat("TP is too close to Entry (min broker distance is %.1f pips)",
+                                min_stop/PipSize());
+            return false;
+           }
         }
      }
    return true;
+  }
+
+bool ValidatePendingPrices(const bool buy_side,const double entry,const double sl,const double tp,string &reason)
+  {
+   ENUM_ORDER_TYPE dummy;
+   return ValidatePendingPrices(buy_side,entry,sl,tp,dummy,reason);
   }
 
 //+------------------------------------------------------------------+
@@ -2697,7 +2784,8 @@ void PlaceLimitOrder()
    double entry=(g_is_buy ? NormalizePriceDown(LinePrice("ENTRY")) : NormalizePriceUp(LinePrice("ENTRY")));
    double sl=(g_is_buy ? NormalizePriceDown(LinePrice("SL")) : NormalizePriceUp(LinePrice("SL")));
    double tp=(g_is_buy ? NormalizePriceUp(LinePrice("TP")) : NormalizePriceDown(LinePrice("TP")));
-   if(!ValidatePendingPrices(g_is_buy,entry,sl,tp,reason))
+   ENUM_ORDER_TYPE order_type;
+   if(!ValidatePendingPrices(g_is_buy,entry,sl,tp,order_type,reason))
      {
       SetStatus(reason,RP_RED,7);
       return;
@@ -2717,14 +2805,35 @@ void PlaceLimitOrder()
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetDeviationInPoints(InpDeviationPoints);
    trade.SetTypeFillingBySymbol(_Symbol);
-   bool sent=(g_is_buy ? trade.BuyLimit(volume,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"ArkoRisk BuyLimit")
-                       : trade.SellLimit(volume,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"ArkoRisk SellLimit"));
+   bool sent=false;
+   string order_desc="";
+   if(order_type==ORDER_TYPE_BUY_LIMIT)
+     {
+      order_desc="BUY LIMIT";
+      sent=trade.BuyLimit(volume,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"ArkoRisk BuyLimit");
+     }
+   else if(order_type==ORDER_TYPE_BUY_STOP)
+     {
+      order_desc="BUY STOP";
+      sent=trade.BuyStop(volume,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"ArkoRisk BuyStop");
+     }
+   else if(order_type==ORDER_TYPE_SELL_LIMIT)
+     {
+      order_desc="SELL LIMIT";
+      sent=trade.SellLimit(volume,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"ArkoRisk SellLimit");
+     }
+   else if(order_type==ORDER_TYPE_SELL_STOP)
+     {
+      order_desc="SELL STOP";
+      sent=trade.SellStop(volume,entry,_Symbol,sl,tp,ORDER_TIME_GTC,0,"ArkoRisk SellStop");
+     }
+
    if(sent && TradeRetcodeOK())
-      SetStatus(StringFormat("%s placed | %s lots | risk %s",g_is_buy?"BUY LIMIT":"SELL LIMIT",
+      SetStatus(StringFormat("%s placed | %s lots | risk %s",order_desc,
                              DoubleToString(volume,VolumeDigits(SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP))),
                              MoneyText(risk_money)),RP_GREEN,8);
    else
-      SetStatus(StringFormat("Limit rejected: %s",trade.ResultRetcodeDescription()),RP_RED,9);
+      SetStatus(StringFormat("%s rejected: %s",order_desc,trade.ResultRetcodeDescription()),RP_RED,9);
    UpdatePanel();
   }
 
@@ -3506,7 +3615,18 @@ void UpdatePanel()
      {
       SetObjectIntegerIfChanged(UI("BUY_LIMIT"),OBJPROP_BORDER_COLOR,g_is_buy?RP_WHITE:RP_GREEN_2);
       SetObjectIntegerIfChanged(UI("SELL_LIMIT"),OBJPROP_BORDER_COLOR,g_is_buy?RP_RED_2:RP_WHITE);
-      SetObjectTextIfChanged(UI("PLACE"),g_is_buy?"PLACE BUY LIMIT":"PLACE SELL LIMIT");
+      string place_btn="PLACE ORDER";
+      if(DesignerExists() && tick.ask>0.0 && tick.bid>0.0)
+        {
+         double entry=LinePrice("ENTRY");
+         if(g_is_buy)
+            place_btn=(entry<tick.ask ? "PLACE BUY LIMIT" : "PLACE BUY STOP");
+         else
+            place_btn=(entry>tick.bid ? "PLACE SELL LIMIT" : "PLACE SELL STOP");
+        }
+      else
+         place_btn=(g_is_buy ? "PLACE BUY LIMIT" : "PLACE SELL LIMIT");
+      SetObjectTextIfChanged(UI("PLACE"),place_btn);
      }
    if(ObjectFind(0,UI("RR_LINK"))>=0)
      {
@@ -3536,8 +3656,10 @@ void UpdatePanel()
          int vd=VolumeDigits(SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP));
          SetLabelText("PREVIEW",StringFormat("Lot %s   |   Risk %.2f   |   Target %.2f",
                                              DoubleToString(volume,vd),risk_money,reward_money),RP_BLUE);
+         string levels_type=(g_is_buy ? (entry<tick.ask ? "BUY LIMIT" : "BUY STOP")
+                                      : (entry>tick.bid ? "SELL LIMIT" : "SELL STOP"));
          SetLabelText("LEVELS",StringFormat("%s  E %s  /  SL %s  /  TP %s",
-                                            g_is_buy?"BUY LIMIT":"SELL LIMIT",PriceText(entry),PriceText(sl),PriceText(tp)),RP_MUTED);
+                                            levels_type,PriceText(entry),PriceText(sl),PriceText(tp)),RP_MUTED);
          UpdateTradePreviewLabels();
         }
       else
